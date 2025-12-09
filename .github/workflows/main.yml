@@ -1,5 +1,5 @@
 name: 手动压缩已有图片
-# 仅支持手动触发，无任何自动触发逻辑
+# 仅支持手动触发，无自动触发
 on:
   workflow_dispatch:
 
@@ -7,44 +7,35 @@ jobs:
   compress-all-images:
     runs-on: ubuntu-latest
     steps:
-      # 1. 检出仓库全部代码（需完整提交历史）
+      # 1. 检出仓库全部代码
       - name: 检出代码
         uses: actions/checkout@v4
         with:
-          persist-credentials: false  # 禁用默认token，使用自定义PAT
-          fetch-depth: 0             # 拉取完整提交历史，避免提交失败
+          persist-credentials: false
+          fetch-depth: 0
 
-      # 2. 安装Node.js（Squoosh CLI依赖）
-      - name: 安装Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20.x  # 兼容Squoosh CLI的稳定版本
-
-      # 3. 安装Squoosh CLI图片压缩工具
+      # 2. 安装系统级图片压缩工具（替代Squoosh，无兼容性问题）
       - name: 安装压缩工具
-        run: npm install -g @squoosh/cli
+        run: |
+          sudo apt-get update
+          # 安装JPG/PNG/WebP压缩工具
+          sudo apt-get install -y jpegoptim optipng webp
 
-      # 4. 批量压缩所有图片（核心逻辑）
+      # 3. 批量压缩所有图片（核心逻辑，分格式处理）
       - name: 压缩仓库中所有图片
         run: |
-          # 遍历所有图片格式，排除.git目录
-          find . -type f \( -iname "*.png" -o -iname "*.jpg" -o -iname "*.jpeg" -o -iname "*.webp" \) \
-            -not -path "./.git/*" | while read -r img; do
-              echo "正在压缩：$img"
-              # 分格式配置压缩参数（兼顾质量和体积）
-              if [[ $img == *.jpg || $img == *.jpeg ]]; then
-                # JPG：mozjpeg算法，质量80（可调整0-100）
-                squoosh-cli --mozjpeg '{quality:80, dcScanOpt:1}' "$img" -d "$(dirname "$img")"
-              elif [[ $img == *.png ]]; then
-                # PNG：oxipng算法，级别6（平衡速度/压缩率）
-                squoosh-cli --oxipng '{level:6, interlace:0}' "$img" -d "$(dirname "$img")"
-              elif [[ $img == *.webp ]]; then
-                # WebP：质量85（可调整0-100）
-                squoosh-cli --webp '{quality:85}' "$img" -d "$(dirname "$img")"
-              fi
-            done
+          # 压缩JPG/JPEG（质量80-90，保留原画质，overwrite覆盖原文件）
+          find . -type f \( -iname "*.jpg" -o -iname "*.jpeg" \) -not -path "./.git/*" -exec jpegoptim --quality=80-90 --overwrite {} \;
+          
+          # 压缩PNG（级别6，无损压缩，force覆盖原文件）
+          find . -type f -iname "*.png" -not -path "./.git/*" -exec optipng -o6 -force {} \;
+          
+          # 压缩WebP（质量85，有损压缩，覆盖原文件）
+          find . -type f -iname "*.webp" -not -path "./.git/*" | while read -r img; do
+            cwebp -q 85 -m 6 "$img" -o "$img"
+          done
 
-      # 5. 检查是否有图片被压缩（避免空提交）
+      # 4. 检查是否有图片被压缩（避免空提交）
       - name: 检查文件修改
         id: check_changes
         run: |
@@ -55,18 +46,18 @@ jobs:
             echo "has_changes=true" >> $GITHUB_OUTPUT
           fi
 
-      # 6. 提交并推送压缩后的图片（仅当有修改时执行）
+      # 5. 提交并推送修改（仅当有修改时执行）
       - name: 提交并推送修改
         if: steps.check_changes.outputs.has_changes == 'true'
         run: |
           # ========== 必须替换以下3处占位符 ==========
-          git config --global user.name "Zephyr"       
+           git config --global user.name "Zephyr"       
           git config --global user.email "willtien@outlook.com"   
           # 替换：你的用户名/仓库名，如 "zhangsan/my-image-repo"
           git push_repo="https://${{ secrets.GH_PAT }}@github.com/TienOUC/blog-img.git"
           # ========================================
           
-          # 提交修改（[skip ci] 避免误触发其他CI）
+          # 提交修改（[skip ci] 避免误触发CI）
           git commit -m "chore: 手动压缩已有图片 [skip ci]"
           # 推送修改到主分支（若分支是master，替换main为master）
           git push $git_push_repo main
