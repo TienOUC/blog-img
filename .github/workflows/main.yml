@@ -50,12 +50,11 @@ jobs:
       - name: 提交并推送修改
         if: steps.check_changes.outputs.has_changes == 'true'
         run: |
-          # ========== 必须替换以下3处占位符 ==========
-           git config --global user.name "Zephyr"       
+          git config --global user.name "Zephyr"       
           git config --global user.email "willtien@outlook.com"   
-          # 替换：你的用户名/仓库名，如 "zhangsan/my-image-repo"
           git push_repo="https://${{ secrets.GH_PAT }}@github.com/TienOUC/blog-img.git"
-          # ========================================
+          git push "$git_push_repo" main
+          
           
           # 提交修改（[skip ci] 避免误触发CI）
           git commit -m "chore: 手动压缩已有图片 [skip ci]"
